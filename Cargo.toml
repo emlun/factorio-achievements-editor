@@ -1,0 +1,8 @@
+[package]
+name = "factorio-achievements-editor"
+description = "Minimal parser and editor for Factorio achievements.dat files"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
