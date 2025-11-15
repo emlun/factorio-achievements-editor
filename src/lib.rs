@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 use std::fmt::Formatter;
 use std::io::Read;
+use std::io::Write;
 use std::marker::PhantomData;
 
 fn read_exact<const LEN: usize, R: Read>(read: &mut R) -> std::io::Result<[u8; LEN]> {
@@ -14,6 +15,13 @@ where
     Self: Sized,
 {
     fn parse<R: Read>(read: &mut R) -> std::io::Result<Self>;
+}
+
+pub trait Serialize
+where
+    Self: Sized,
+{
+    fn serialize<W: Write>(&self, w: &mut W) -> std::io::Result<()>;
 }
 
 pub struct SpaceOptimizedString {
@@ -39,6 +47,18 @@ impl Parse for SpaceOptimizedString {
         Ok(Self {
             value: buf.into_boxed_slice(),
         })
+    }
+}
+
+impl Serialize for SpaceOptimizedString {
+    fn serialize<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
+        if self.value.len() < 255 {
+            w.write_all(&self.value.len().to_le_bytes()[0..1])?;
+        } else {
+            w.write_all(&[255])?;
+            w.write_all(&self.value.len().to_le_bytes()[0..4])?;
+        }
+        w.write_all(&self.value)
     }
 }
 
@@ -73,7 +93,7 @@ where
     fn parse<R: Read>(read: &mut R) -> std::io::Result<Self> {
         let raw_len = read_exact(read)?;
         let len = usize::try_from(L::from_le_bytes(&raw_len))
-            .expect(&format!("Invalid length: {:?}", raw_len));
+            .unwrap_or_else(|_| panic!("Invalid length: {:?}", raw_len));
         let mut items = Vec::with_capacity(len);
         for _ in 0..len {
             items.push(T::parse(read)?);
@@ -82,6 +102,16 @@ where
             len: PhantomData,
             items,
         })
+    }
+}
+
+impl<const LEN: usize, L, T> Serialize for Array<LEN, L, T>
+where
+    T: Serialize,
+{
+    fn serialize<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
+        w.write_all(&self.items.len().to_le_bytes()[0..LEN])?;
+        self.items.iter().try_for_each(|item| item.serialize(w))
     }
 }
 
@@ -121,6 +151,21 @@ impl Parse for AchievementsDat {
     }
 }
 
+impl Serialize for AchievementsDat {
+    fn serialize<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
+        w.write_all(&self.version[0].to_le_bytes())?;
+        w.write_all(&self.version[1].to_le_bytes())?;
+        w.write_all(&self.version[2].to_le_bytes())?;
+        w.write_all(&self.version[3].to_le_bytes())?;
+        w.write_all(&[self.const_false.into()])?;
+        self.headers.serialize(w)?;
+        self.contents.serialize(w)?;
+        self.tracked
+            .iter()
+            .try_for_each(|tracked| w.write_all(&tracked.to_le_bytes()))
+    }
+}
+
 #[derive(Debug)]
 pub struct AchievementHeader {
     typ: SpaceOptimizedString,
@@ -133,6 +178,13 @@ impl Parse for AchievementHeader {
             typ: SpaceOptimizedString::parse(read)?,
             subobjects: Array::parse(read)?,
         })
+    }
+}
+
+impl Serialize for AchievementHeader {
+    fn serialize<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
+        self.typ.serialize(w)?;
+        self.subobjects.serialize(w)
     }
 }
 
@@ -151,6 +203,13 @@ impl Parse for HeaderSubobject {
     }
 }
 
+impl Serialize for HeaderSubobject {
+    fn serialize<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
+        self.id.serialize(w)?;
+        w.write_all(&self.index.to_le_bytes())
+    }
+}
+
 #[derive(Debug)]
 pub struct AchievementContent {
     typ: SpaceOptimizedString,
@@ -164,6 +223,14 @@ impl Parse for AchievementContent {
         let id = SpaceOptimizedString::parse(read)?;
         let progress = AchievementProgress::parse(&typ.value, read)?;
         Ok(Self { typ, id, progress })
+    }
+}
+
+impl Serialize for AchievementContent {
+    fn serialize<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
+        self.typ.serialize(w)?;
+        self.id.serialize(w)?;
+        self.progress.serialize(w)
     }
 }
 
@@ -263,5 +330,57 @@ impl AchievementProgress {
             b"use-item-achievement" => UseItem(read_exact(read)?),
             _ => unimplemented!("Unknown achievement type: {}", String::from_utf8_lossy(typ)),
         })
+    }
+}
+
+impl Serialize for AchievementProgress {
+    fn serialize<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
+        use AchievementProgress::*;
+        match self {
+            Achievement => Ok(()),
+            BuildEntity(data) => w.write_all(data),
+            ChangeSurface(data) => w.write_all(data),
+            CombatRobotCount(count) => w.write_all(&count.to_le_bytes()),
+            CompleteObjective => Ok(()),
+            ConstructWithRobots {
+                constructed,
+                unknown,
+            } => {
+                w.write_all(&constructed.to_le_bytes())?;
+                w.write_all(unknown)
+            }
+            CreatePlatform(data) => w.write_all(data),
+            DeconstructWithRobots { deconstructed } => w.write_all(&deconstructed.to_le_bytes()),
+            DeliverByRobots(data) => w.write_all(data),
+            DepleteResource(data) => w.write_all(data),
+            DestroyCliff(data) => w.write_all(data),
+            DontBuildEntity(data) => w.write_all(data),
+            DontCraftManually(data) => w.write_all(data),
+            DontUseEntityInEnergyProduction { max_j_per_h } => {
+                w.write_all(&max_j_per_h.to_le_bytes())
+            }
+            EquipArmor(data) => w.write_all(data),
+            FinishTheGame(data) => w.write_all(data),
+            GroupAttack(data) => w.write_all(data),
+            Kill { max_killed } => w.write_all(&max_killed.to_le_bytes()),
+            ModuleTransfer(data) => w.write_all(data),
+            PlaceEquipment(data) => w.write_all(data),
+            PlayerDamaged {
+                max_damage,
+                survived,
+            } => {
+                w.write_all(&max_damage.to_le_bytes())?;
+                w.write_all(&[(*survived).into()])
+            }
+            Produce { produced } => w.write_all(&produced.to_le_bytes()),
+            ProducePerHour { max_per_h } => w.write_all(&max_per_h.to_le_bytes()),
+            Research => Ok(()),
+            ResearchWithSciencePack(data) => w.write_all(data),
+            Shoot(data) => w.write_all(data),
+            SpaceConnectionDistanceTraveled(data) => w.write_all(data),
+            TrainPath { longest_path } => w.write_all(&longest_path.to_le_bytes()),
+            UseEntityInEnergyProduction(data) => w.write_all(data),
+            UseItem(data) => w.write_all(data),
+        }
     }
 }
