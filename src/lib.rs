@@ -92,7 +92,7 @@ where
 pub struct AchievementsDat {
     version: [i16; 4],
     const_false: bool,
-    headers: Array<4, i32, AchievementHeader>,
+    headers: Array<2, i16, AchievementHeader>,
     contents: Array<4, i32, AchievementContent>,
     tracked: Vec<i16>,
 }
@@ -108,7 +108,7 @@ impl Parse for AchievementsDat {
         ];
         let const_false = read_exact::<1, _>(read)? == [1];
         let headers = Array::parse(read, &())?;
-        let contents = Array::parse(read, &headers)?;
+        let contents = Array::parse(read, &())?;
         Ok(Self {
             version,
             const_false,
@@ -161,7 +161,7 @@ impl Parse for AchievementsModdedDat {
 #[derive(Debug)]
 pub struct AchievementHeader {
     typ: SpaceOptimizedString,
-    subobjects: Array<4, i32, HeaderSubobject>,
+    subobjects: Array<2, i16, HeaderSubobject>,
 }
 
 impl Parse for AchievementHeader {
@@ -208,21 +208,18 @@ impl Parse for HeaderSubobject {
 
 #[derive(Debug)]
 pub struct AchievementContent {
-    index: i16,
+    typ: SpaceOptimizedString,
+    id: SpaceOptimizedString,
     progress: AchievementProgress,
 }
 
-impl<'header> Parse for AchievementContent {
-    type Ctx = Array<4, i32, AchievementHeader>;
-    fn parse<R: Read>(read: &mut R, header: &Self::Ctx) -> std::io::Result<Self> {
-        let index = i16::from_le_bytes(read_exact(read)?);
-        let progress = AchievementProgress::parse(
-            &header.items[usize::try_from(index).expect("Invalid length")]
-                .typ
-                .value,
-            read,
-        )?;
-        Ok(Self { index, progress })
+impl Parse for AchievementContent {
+    type Ctx = ();
+    fn parse<R: Read>(read: &mut R, _: &()) -> std::io::Result<Self> {
+        let typ = SpaceOptimizedString::parse(read, &())?;
+        let id = SpaceOptimizedString::parse(read, &())?;
+        let progress = AchievementProgress::parse(&typ.value, read)?;
+        Ok(Self { typ, id, progress })
     }
 }
 
@@ -249,9 +246,9 @@ pub enum AchievementProgress {
     CombatRobotCount(i32),
     ConstructWithRobots { constructed: i32, unknown: [u8; 4] },
     DeconstructWithRobots { deconstructed: i32 },
-    DeliverByRobots([u8; 8]),
-    DontBuildEntity([u8; 4]),
-    DontCraftManually([u8; 8]),
+    DeliverByRobots([u8; 4]),
+    DontBuildEntity([u8; 5]),
+    DontCraftManually([u8; 4]),
     DontUseEntityInEnergyProduction { max_j_per_h: f64 },
     FinishTheGame([u8; 4]),
     GroupAttack([u8; 4]),
@@ -259,9 +256,22 @@ pub enum AchievementProgress {
     PlayerDamaged { max_damage: f32, survived: bool },
     Produce { produced: f64 },
     ProducePerHour { max_per_h: f64 },
-    Research([u8; 4]),
+    Research,
     TrainPath { longest_path: f64 },
-    Achievement([u8; 0]),
+    Achievement,
+    CompleteObjective,
+    UseEntityInEnergyProduction([u8; 5]),
+    DepleteResource([u8; 4]),
+    ResearchWithSciencePack([u8; 4]),
+    DestroyCliff([u8; 4]),
+    Shoot([u8; 4]),
+    CreatePlatform([u8; 4]),
+    ChangeSurface([u8; 1]),
+    SpaceConnectionDistanceTraveled([u8; 4]),
+    ModuleTransfer([u8; 4]),
+    EquipArmor([u8; 4]),
+    UseItem([u8; 4]),
+    PlaceEquipment([u8; 4]),
 }
 
 impl AchievementProgress {
@@ -269,7 +279,9 @@ impl AchievementProgress {
         use AchievementProgress::*;
         Ok(match typ {
             b"build-entity-achievement" => BuildEntity(read_exact(read)?),
-            b"combat-robot-count" => CombatRobotCount(i32::from_le_bytes(read_exact(read)?)),
+            b"combat-robot-count-achievement" => {
+                CombatRobotCount(i32::from_le_bytes(read_exact(read)?))
+            }
             b"construct-with-robots-achievement" => ConstructWithRobots {
                 constructed: i32::from_le_bytes(read_exact(read)?),
                 unknown: read_exact(read)?,
@@ -300,11 +312,28 @@ impl AchievementProgress {
             b"produce-per-hour-achievement" => ProducePerHour {
                 max_per_h: f64::from_le_bytes(read_exact(read)?),
             },
-            b"research-achievement" => Research(read_exact(read)?),
+            b"research-achievement" => Research,
             b"train-path-achievement" => TrainPath {
                 longest_path: f64::from_le_bytes(read_exact(read)?),
             },
-            b"achievement" => Achievement([]),
+            b"achievement" => Achievement,
+            b"complete-objective-achievement" => CompleteObjective,
+            b"use-entity-in-energy-production-achievement" => {
+                UseEntityInEnergyProduction(read_exact(read)?)
+            }
+            b"deplete-resource-achievement" => DepleteResource(read_exact(read)?),
+            b"research-with-science-pack-achievement" => ResearchWithSciencePack(read_exact(read)?),
+            b"destroy-cliff-achievement" => DestroyCliff(read_exact(read)?),
+            b"shoot-achievement" => Shoot(read_exact(read)?),
+            b"create-platform-achievement" => CreatePlatform(read_exact(read)?),
+            b"change-surface-achievement" => ChangeSurface(read_exact(read)?),
+            b"space-connection-distance-traveled-achievement" => {
+                SpaceConnectionDistanceTraveled(read_exact(read)?)
+            }
+            b"module-transfer-achievement" => ModuleTransfer(read_exact(read)?),
+            b"equip-armor-achievement" => EquipArmor(read_exact(read)?),
+            b"use-item-achievement" => UseItem(read_exact(read)?),
+            b"place-equipment-achievement" => PlaceEquipment(read_exact(read)?),
             _ => unimplemented!("Unknown achievement type: {}", String::from_utf8_lossy(typ)),
         })
     }
