@@ -242,54 +242,60 @@ impl Parse for AchievementContentModded {
 
 #[derive(Debug)]
 pub enum AchievementProgress {
+    Achievement,
     BuildEntity([u8; 4]),
+    ChangeSurface([u8; 1]),
     CombatRobotCount(i32),
+    CompleteObjective,
     ConstructWithRobots { constructed: i32, unknown: [u8; 4] },
+    CreatePlatform([u8; 4]),
     DeconstructWithRobots { deconstructed: i32 },
     DeliverByRobots([u8; 4]),
+    DepleteResource([u8; 4]),
+    DestroyCliff([u8; 4]),
     DontBuildEntity([u8; 5]),
     DontCraftManually([u8; 4]),
     DontUseEntityInEnergyProduction { max_j_per_h: f64 },
+    EquipArmor([u8; 4]),
     FinishTheGame([u8; 4]),
     GroupAttack([u8; 4]),
     Kill { max_killed: f64 },
+    ModuleTransfer([u8; 4]),
+    PlaceEquipment([u8; 4]),
     PlayerDamaged { max_damage: f32, survived: bool },
     Produce { produced: f64 },
     ProducePerHour { max_per_h: f64 },
     Research,
-    TrainPath { longest_path: f64 },
-    Achievement,
-    CompleteObjective,
-    UseEntityInEnergyProduction([u8; 5]),
-    DepleteResource([u8; 4]),
     ResearchWithSciencePack([u8; 4]),
-    DestroyCliff([u8; 4]),
     Shoot([u8; 4]),
-    CreatePlatform([u8; 4]),
-    ChangeSurface([u8; 1]),
     SpaceConnectionDistanceTraveled([u8; 4]),
-    ModuleTransfer([u8; 4]),
-    EquipArmor([u8; 4]),
+    TrainPath { longest_path: f64 },
+    UseEntityInEnergyProduction([u8; 5]),
     UseItem([u8; 4]),
-    PlaceEquipment([u8; 4]),
 }
 
 impl AchievementProgress {
     fn parse<R: Read>(typ: &[u8], read: &mut R) -> std::io::Result<Self> {
         use AchievementProgress::*;
         Ok(match typ {
+            b"achievement" => Achievement,
             b"build-entity-achievement" => BuildEntity(read_exact(read)?),
+            b"change-surface-achievement" => ChangeSurface(read_exact(read)?),
             b"combat-robot-count-achievement" => {
                 CombatRobotCount(i32::from_le_bytes(read_exact(read)?))
             }
+            b"complete-objective-achievement" => CompleteObjective,
             b"construct-with-robots-achievement" => ConstructWithRobots {
                 constructed: i32::from_le_bytes(read_exact(read)?),
                 unknown: read_exact(read)?,
             },
+            b"create-platform-achievement" => CreatePlatform(read_exact(read)?),
             b"deconstruct-with-robots-achievement" => DeconstructWithRobots {
                 deconstructed: i32::from_le_bytes(read_exact(read)?),
             },
             b"deliver-by-robots-achievement" => DeliverByRobots(read_exact(read)?),
+            b"deplete-resource-achievement" => DepleteResource(read_exact(read)?),
+            b"destroy-cliff-achievement" => DestroyCliff(read_exact(read)?),
             b"dont-build-entity-achievement" => DontBuildEntity(read_exact(read)?),
             b"dont-craft-manually-achievement" => DontCraftManually(read_exact(read)?),
             b"dont-use-entity-in-energy-production-achievement" => {
@@ -297,11 +303,14 @@ impl AchievementProgress {
                     max_j_per_h: f64::from_le_bytes(read_exact(read)?),
                 }
             }
+            b"equip-armor-achievement" => EquipArmor(read_exact(read)?),
             b"finish-the-game-achievement" => FinishTheGame(read_exact(read)?),
             b"group-attack-achievement" => GroupAttack(read_exact(read)?),
             b"kill-achievement" => Kill {
                 max_killed: f64::from_le_bytes(read_exact(read)?),
             },
+            b"module-transfer-achievement" => ModuleTransfer(read_exact(read)?),
+            b"place-equipment-achievement" => PlaceEquipment(read_exact(read)?),
             b"player-damaged-achievement" => PlayerDamaged {
                 max_damage: f32::from_le_bytes(read_exact(read)?),
                 survived: read_exact(read)? == [1],
@@ -313,27 +322,18 @@ impl AchievementProgress {
                 max_per_h: f64::from_le_bytes(read_exact(read)?),
             },
             b"research-achievement" => Research,
-            b"train-path-achievement" => TrainPath {
-                longest_path: f64::from_le_bytes(read_exact(read)?),
-            },
-            b"achievement" => Achievement,
-            b"complete-objective-achievement" => CompleteObjective,
-            b"use-entity-in-energy-production-achievement" => {
-                UseEntityInEnergyProduction(read_exact(read)?)
-            }
-            b"deplete-resource-achievement" => DepleteResource(read_exact(read)?),
             b"research-with-science-pack-achievement" => ResearchWithSciencePack(read_exact(read)?),
-            b"destroy-cliff-achievement" => DestroyCliff(read_exact(read)?),
             b"shoot-achievement" => Shoot(read_exact(read)?),
-            b"create-platform-achievement" => CreatePlatform(read_exact(read)?),
-            b"change-surface-achievement" => ChangeSurface(read_exact(read)?),
             b"space-connection-distance-traveled-achievement" => {
                 SpaceConnectionDistanceTraveled(read_exact(read)?)
             }
-            b"module-transfer-achievement" => ModuleTransfer(read_exact(read)?),
-            b"equip-armor-achievement" => EquipArmor(read_exact(read)?),
+            b"train-path-achievement" => TrainPath {
+                longest_path: f64::from_le_bytes(read_exact(read)?),
+            },
+            b"use-entity-in-energy-production-achievement" => {
+                UseEntityInEnergyProduction(read_exact(read)?)
+            }
             b"use-item-achievement" => UseItem(read_exact(read)?),
-            b"place-equipment-achievement" => PlaceEquipment(read_exact(read)?),
             _ => unimplemented!("Unknown achievement type: {}", String::from_utf8_lossy(typ)),
         })
     }
