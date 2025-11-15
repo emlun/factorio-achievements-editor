@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fmt::Debug;
 use std::fmt::Formatter;
 use std::io::Read;
@@ -24,6 +25,7 @@ where
     fn serialize<W: Write>(&self, w: &mut W) -> std::io::Result<()>;
 }
 
+#[derive(Eq, Ord, PartialEq, PartialOrd)]
 pub struct SpaceOptimizedString {
     value: Box<[u8]>,
 }
@@ -122,6 +124,23 @@ pub struct AchievementsDat {
     headers: Array<2, i16, AchievementHeader>,
     contents: Array<4, i32, AchievementContent>,
     tracked: Vec<i16>,
+}
+
+impl AchievementsDat {
+    pub fn delete(mut self, id: &[u8]) -> Self {
+        self.contents
+            .items
+            .iter_mut()
+            .filter(|content| content.id.value.as_ref() == id)
+            .for_each(|content| {
+                content.progress.reset();
+            });
+        self
+    }
+
+    pub fn list(&self) -> BTreeSet<&SpaceOptimizedString> {
+        self.contents.items.iter().map(|item| &item.id).collect()
+    }
 }
 
 impl Parse for AchievementsDat {
@@ -266,6 +285,64 @@ pub enum AchievementProgress {
     TrainPath { longest_path: f64 },
     UseEntityInEnergyProduction([u8; 5]),
     UseItem([u8; 4]),
+}
+
+impl AchievementProgress {
+    fn reset(&mut self) {
+        use AchievementProgress::*;
+        *self = match self {
+            Achievement => Achievement,
+            BuildEntity(..) => BuildEntity(Default::default()),
+            ChangeSurface(..) => ChangeSurface(Default::default()),
+            CombatRobotCount(..) => CombatRobotCount(Default::default()),
+            CompleteObjective => CompleteObjective,
+            ConstructWithRobots { .. } => ConstructWithRobots {
+                constructed: Default::default(),
+                unknown: Default::default(),
+            },
+            CreatePlatform(..) => CreatePlatform(Default::default()),
+            DeconstructWithRobots { .. } => DeconstructWithRobots {
+                deconstructed: Default::default(),
+            },
+            DeliverByRobots(..) => DeliverByRobots(Default::default()),
+            DepleteResource(..) => DepleteResource(Default::default()),
+            DestroyCliff(..) => DestroyCliff(Default::default()),
+            DontBuildEntity(..) => DontBuildEntity(Default::default()),
+            DontCraftManually(..) => DontCraftManually(Default::default()),
+            DontUseEntityInEnergyProduction { .. } => DontUseEntityInEnergyProduction {
+                max_j_per_h: Default::default(),
+            },
+            EquipArmor(..) => EquipArmor(Default::default()),
+            FinishTheGame(..) => FinishTheGame(Default::default()),
+            GroupAttack(..) => GroupAttack(Default::default()),
+            Kill { .. } => Kill {
+                max_killed: Default::default(),
+            },
+            ModuleTransfer(..) => ModuleTransfer(Default::default()),
+            PlaceEquipment(..) => PlaceEquipment(Default::default()),
+            PlayerDamaged { .. } => PlayerDamaged {
+                max_damage: Default::default(),
+                survived: Default::default(),
+            },
+            Produce { .. } => Produce {
+                produced: Default::default(),
+            },
+            ProducePerHour { .. } => ProducePerHour {
+                max_per_h: Default::default(),
+            },
+            Research => Research,
+            ResearchWithSciencePack(..) => ResearchWithSciencePack(Default::default()),
+            Shoot(..) => Shoot(Default::default()),
+            SpaceConnectionDistanceTraveled(..) => {
+                SpaceConnectionDistanceTraveled(Default::default())
+            }
+            TrainPath { .. } => TrainPath {
+                longest_path: Default::default(),
+            },
+            UseEntityInEnergyProduction(..) => UseEntityInEnergyProduction(Default::default()),
+            UseItem(..) => UseItem(Default::default()),
+        };
+    }
 }
 
 impl AchievementProgress {
