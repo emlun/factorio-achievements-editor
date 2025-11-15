@@ -13,8 +13,7 @@ pub trait Parse
 where
     Self: Sized,
 {
-    type Ctx;
-    fn parse<R: Read>(read: &mut R, ctx: &Self::Ctx) -> std::io::Result<Self>;
+    fn parse<R: Read>(read: &mut R) -> std::io::Result<Self>;
 }
 
 pub struct SpaceOptimizedString {
@@ -28,8 +27,7 @@ impl Debug for SpaceOptimizedString {
 }
 
 impl Parse for SpaceOptimizedString {
-    type Ctx = ();
-    fn parse<R: Read>(read: &mut R, _: &Self::Ctx) -> std::io::Result<Self> {
+    fn parse<R: Read>(read: &mut R) -> std::io::Result<Self> {
         let head: [u8; 1] = read_exact(read)?;
         let len: u32 = if head == [255] {
             u32::from_le_bytes(read_exact(read)?)
@@ -72,14 +70,13 @@ where
     <usize as TryFrom<L>>::Error: Debug,
     T: Parse,
 {
-    type Ctx = <T as Parse>::Ctx;
-    fn parse<R: Read>(read: &mut R, ctx: &Self::Ctx) -> std::io::Result<Self> {
+    fn parse<R: Read>(read: &mut R) -> std::io::Result<Self> {
         let raw_len = read_exact(read)?;
         let len = usize::try_from(L::from_le_bytes(&raw_len))
             .expect(&format!("Invalid length: {:?}", raw_len));
         let mut items = Vec::with_capacity(len);
         for _ in 0..len {
-            items.push(T::parse(read, ctx)?);
+            items.push(T::parse(read)?);
         }
         Ok(Self {
             len: PhantomData,
@@ -98,8 +95,7 @@ pub struct AchievementsDat {
 }
 
 impl Parse for AchievementsDat {
-    type Ctx = ();
-    fn parse<R: Read>(read: &mut R, _: &Self::Ctx) -> std::io::Result<Self> {
+    fn parse<R: Read>(read: &mut R) -> std::io::Result<Self> {
         let version = [
             i16::from_le_bytes(read_exact(read)?),
             i16::from_le_bytes(read_exact(read)?),
@@ -107,46 +103,13 @@ impl Parse for AchievementsDat {
             i16::from_le_bytes(read_exact(read)?),
         ];
         let const_false = read_exact::<1, _>(read)? == [1];
-        let headers = Array::parse(read, &())?;
-        let contents = Array::parse(read, &())?;
+        let headers = Array::parse(read)?;
+        let contents = Array::parse(read)?;
         Ok(Self {
             version,
             const_false,
             headers,
             contents,
-            tracked: {
-                let mut buf = Vec::new();
-                while let Ok(next) = read_exact(read) {
-                    buf.push(i16::from_le_bytes(next));
-                }
-                buf
-            },
-        })
-    }
-}
-
-#[derive(Debug)]
-pub struct AchievementsModdedDat {
-    version: [i16; 4],
-    const_false: bool,
-    headers: Array<2, i16, AchievementHeaderModded>,
-    contents: Array<4, i32, AchievementContentModded>,
-    tracked: Vec<i16>,
-}
-
-impl Parse for AchievementsModdedDat {
-    type Ctx = ();
-    fn parse<R: Read>(read: &mut R, _: &Self::Ctx) -> std::io::Result<Self> {
-        Ok(Self {
-            version: [
-                i16::from_le_bytes(read_exact(read)?),
-                i16::from_le_bytes(read_exact(read)?),
-                i16::from_le_bytes(read_exact(read)?),
-                i16::from_le_bytes(read_exact(read)?),
-            ],
-            const_false: read_exact::<1, _>(read)? != [1],
-            headers: Array::parse(read, &())?,
-            contents: Array::parse(read, &())?,
             tracked: {
                 let mut buf = Vec::new();
                 while let Ok(next) = read_exact(read) {
@@ -165,27 +128,10 @@ pub struct AchievementHeader {
 }
 
 impl Parse for AchievementHeader {
-    type Ctx = ();
-    fn parse<R: Read>(read: &mut R, _: &Self::Ctx) -> std::io::Result<Self> {
+    fn parse<R: Read>(read: &mut R) -> std::io::Result<Self> {
         Ok(Self {
-            typ: SpaceOptimizedString::parse(read, &())?,
-            subobjects: Array::parse(read, &())?,
-        })
-    }
-}
-
-#[derive(Debug)]
-pub struct AchievementHeaderModded {
-    typ: SpaceOptimizedString,
-    subobjects: Array<2, i16, HeaderSubobject>,
-}
-
-impl Parse for AchievementHeaderModded {
-    type Ctx = ();
-    fn parse<R: Read>(read: &mut R, _: &Self::Ctx) -> std::io::Result<Self> {
-        Ok(Self {
-            typ: SpaceOptimizedString::parse(read, &())?,
-            subobjects: Array::parse(read, &())?,
+            typ: SpaceOptimizedString::parse(read)?,
+            subobjects: Array::parse(read)?,
         })
     }
 }
@@ -197,10 +143,9 @@ pub struct HeaderSubobject {
 }
 
 impl Parse for HeaderSubobject {
-    type Ctx = ();
-    fn parse<R: Read>(read: &mut R, _: &Self::Ctx) -> std::io::Result<Self> {
+    fn parse<R: Read>(read: &mut R) -> std::io::Result<Self> {
         Ok(Self {
-            id: SpaceOptimizedString::parse(read, &())?,
+            id: SpaceOptimizedString::parse(read)?,
             index: i16::from_le_bytes(read_exact(read)?),
         })
     }
@@ -214,27 +159,9 @@ pub struct AchievementContent {
 }
 
 impl Parse for AchievementContent {
-    type Ctx = ();
-    fn parse<R: Read>(read: &mut R, _: &()) -> std::io::Result<Self> {
-        let typ = SpaceOptimizedString::parse(read, &())?;
-        let id = SpaceOptimizedString::parse(read, &())?;
-        let progress = AchievementProgress::parse(&typ.value, read)?;
-        Ok(Self { typ, id, progress })
-    }
-}
-
-#[derive(Debug)]
-pub struct AchievementContentModded {
-    typ: SpaceOptimizedString,
-    id: SpaceOptimizedString,
-    progress: AchievementProgress,
-}
-
-impl Parse for AchievementContentModded {
-    type Ctx = ();
-    fn parse<R: Read>(read: &mut R, _: &Self::Ctx) -> std::io::Result<Self> {
-        let typ = SpaceOptimizedString::parse(read, &())?;
-        let id = SpaceOptimizedString::parse(read, &())?;
+    fn parse<R: Read>(read: &mut R) -> std::io::Result<Self> {
+        let typ = SpaceOptimizedString::parse(read)?;
+        let id = SpaceOptimizedString::parse(read)?;
         let progress = AchievementProgress::parse(&typ.value, read)?;
         Ok(Self { typ, id, progress })
     }

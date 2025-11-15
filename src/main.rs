@@ -4,7 +4,6 @@ use std::io::Read;
 use clap::Parser;
 use clap::Subcommand;
 use factorio_achievements_editor::AchievementsDat;
-use factorio_achievements_editor::AchievementsModdedDat;
 use factorio_achievements_editor::Parse;
 
 #[derive(Debug, Parser)]
@@ -12,9 +11,6 @@ use factorio_achievements_editor::Parse;
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
-
-    #[arg(long)]
-    modded: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -30,15 +26,11 @@ fn main() -> std::io::Result<()> {
     let cli = Cli::parse();
     let mut stdin = std::io::stdin();
 
+    let data = AchievementsDat::parse(&mut stdin)?;
+
     match cli.command {
         None | Some(Command::Dump) => {
-            if cli.modded {
-                let data = AchievementsModdedDat::parse(&mut stdin, &())?;
-                dbg!(data);
-            } else {
-                let data = AchievementsDat::parse(&mut stdin, &())?;
-                dbg!(data);
-            }
+            dbg!(data);
         }
         _ => unimplemented!(),
     }
