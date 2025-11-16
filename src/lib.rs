@@ -161,20 +161,16 @@ impl AchievementsDat {
 
 impl Parse for AchievementsDat {
     fn parse<R: Read>(read: &mut R) -> std::io::Result<Self> {
-        let version = [
-            i16::from_le_bytes(read_exact(read)?),
-            i16::from_le_bytes(read_exact(read)?),
-            i16::from_le_bytes(read_exact(read)?),
-            i16::from_le_bytes(read_exact(read)?),
-        ];
-        let const_false = read_exact::<1, _>(read)? == [1];
-        let headers = Array::parse(read)?;
-        let contents = Array::parse(read)?;
         Ok(Self {
-            version,
-            const_false,
-            headers,
-            contents,
+            version: [
+                i16::from_le_bytes(read_exact(read)?),
+                i16::from_le_bytes(read_exact(read)?),
+                i16::from_le_bytes(read_exact(read)?),
+                i16::from_le_bytes(read_exact(read)?),
+            ],
+            const_false: read_exact::<1, _>(read)? == [1],
+            headers: Array::parse(read)?,
+            contents: Array::parse(read)?,
             tracked: {
                 let mut buf = Vec::new();
                 while let Ok(next) = read_exact(read) {
