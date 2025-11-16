@@ -7,13 +7,16 @@ Note that Factorio does not appear to use an `achievements.dat` file to track ac
 This implementation works only for Factorio 2.x, and is based primarily on the [documentation in the Factorio Wiki][wiki].
 
 
-## Usage
+## Installation
 
 Build and install using [Cargo][cargo]:
 
 ```sh
 $ cargo install --path .
 ```
+
+
+## Usage
 
 Provide a file to read on standard input:
 
