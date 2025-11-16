@@ -283,6 +283,10 @@ pub enum AchievementProgress {
     DestroyCliff([u8; 4]),
     DontBuildEntity([u8; 5]),
     DontCraftManually([u8; 4]),
+    // Unknown format
+    DontKillManually([u8; 0]),
+    // Unknown format
+    DontResearchBeforeResearching([u8; 0]),
     DontUseEntityInEnergyProduction { max_j_per_h: f64 },
     EquipArmor([u8; 4]),
     FinishTheGame([u8; 4]),
@@ -324,6 +328,8 @@ impl AchievementProgress {
             DestroyCliff(..) => DestroyCliff(Default::default()),
             DontBuildEntity(..) => DontBuildEntity(Default::default()),
             DontCraftManually(..) => DontCraftManually(Default::default()),
+            DontKillManually(..) => todo!(),
+            DontResearchBeforeResearching(..) => todo!(),
             DontUseEntityInEnergyProduction { .. } => DontUseEntityInEnergyProduction {
                 max_j_per_h: Default::default(),
             },
@@ -384,6 +390,12 @@ impl AchievementProgress {
             b"destroy-cliff-achievement" => DestroyCliff(read_exact(read)?),
             b"dont-build-entity-achievement" => DontBuildEntity(read_exact(read)?),
             b"dont-craft-manually-achievement" => DontCraftManually(read_exact(read)?),
+            b"dont-kill-manually-achievement" => {
+                todo!("Unimplemented achievement type: dont-kill-manually-achievement")
+            }
+            b"dont-research-before-researching-achievement" => todo!(
+                "Unimplemented achievement type: dont-research-before-researching-achievement"
+            ),
             b"dont-use-entity-in-energy-production-achievement" => {
                 DontUseEntityInEnergyProduction {
                     max_j_per_h: f64::from_le_bytes(read_exact(read)?),
@@ -448,6 +460,8 @@ impl Serialize for AchievementProgress {
             DestroyCliff(data) => w.write_all(data),
             DontBuildEntity(data) => w.write_all(data),
             DontCraftManually(data) => w.write_all(data),
+            DontKillManually(..) => todo!(),
+            DontResearchBeforeResearching(..) => todo!(),
             DontUseEntityInEnergyProduction { max_j_per_h } => {
                 w.write_all(&max_j_per_h.to_le_bytes())
             }
