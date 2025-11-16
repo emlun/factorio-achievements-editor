@@ -21,9 +21,9 @@ use std::io::Read;
 use std::io::Write;
 use std::marker::PhantomData;
 
-fn read_exact<const LEN: usize, R: Read>(read: &mut R) -> std::io::Result<[u8; LEN]> {
+fn read_exact<const LEN: usize, R: Read>(r: &mut R) -> std::io::Result<[u8; LEN]> {
     let mut buf = [0; LEN];
-    read.read_exact(&mut buf)?;
+    r.read_exact(&mut buf)?;
     Ok(buf)
 }
 
@@ -31,7 +31,7 @@ pub trait Parse
 where
     Self: Sized,
 {
-    fn parse<R: Read>(read: &mut R) -> std::io::Result<Self>;
+    fn parse<R: Read>(r: &mut R) -> std::io::Result<Self>;
 }
 
 pub trait Serialize
@@ -53,15 +53,15 @@ impl Debug for SpaceOptimizedString {
 }
 
 impl Parse for SpaceOptimizedString {
-    fn parse<R: Read>(read: &mut R) -> std::io::Result<Self> {
-        let head: [u8; 1] = read_exact(read)?;
+    fn parse<R: Read>(r: &mut R) -> std::io::Result<Self> {
+        let head: [u8; 1] = read_exact(r)?;
         let len: u32 = if head == [255] {
-            u32::from_le_bytes(read_exact(read)?)
+            u32::from_le_bytes(read_exact(r)?)
         } else {
             head[0].into()
         };
         let mut buf: Vec<u8> = vec![0; len.try_into().expect("Failed to parse length as usize")];
-        read.read_exact(buf.as_mut_slice())?;
+        r.read_exact(buf.as_mut_slice())?;
         Ok(Self {
             value: buf.into_boxed_slice(),
         })
@@ -108,13 +108,13 @@ where
     <usize as TryFrom<L>>::Error: Debug,
     T: Parse,
 {
-    fn parse<R: Read>(read: &mut R) -> std::io::Result<Self> {
-        let raw_len = read_exact(read)?;
+    fn parse<R: Read>(r: &mut R) -> std::io::Result<Self> {
+        let raw_len = read_exact(r)?;
         let len = usize::try_from(L::from_le_bytes(&raw_len))
             .unwrap_or_else(|_| panic!("Invalid length: {:?}", raw_len));
         let mut items = Vec::with_capacity(len);
         for _ in 0..len {
-            items.push(T::parse(read)?);
+            items.push(T::parse(r)?);
         }
         Ok(Self {
             len: PhantomData,
@@ -160,20 +160,20 @@ impl AchievementsDat {
 }
 
 impl Parse for AchievementsDat {
-    fn parse<R: Read>(read: &mut R) -> std::io::Result<Self> {
+    fn parse<R: Read>(r: &mut R) -> std::io::Result<Self> {
         Ok(Self {
             version: [
-                i16::from_le_bytes(read_exact(read)?),
-                i16::from_le_bytes(read_exact(read)?),
-                i16::from_le_bytes(read_exact(read)?),
-                i16::from_le_bytes(read_exact(read)?),
+                i16::from_le_bytes(read_exact(r)?),
+                i16::from_le_bytes(read_exact(r)?),
+                i16::from_le_bytes(read_exact(r)?),
+                i16::from_le_bytes(read_exact(r)?),
             ],
-            unused: read_exact(read)?,
-            headers: Array::parse(read)?,
-            contents: Array::parse(read)?,
+            unused: read_exact(r)?,
+            headers: Array::parse(r)?,
+            contents: Array::parse(r)?,
             tracked: {
                 let mut buf = Vec::new();
-                while let Ok(next) = read_exact(read) {
+                while let Ok(next) = read_exact(r) {
                     buf.push(i16::from_le_bytes(next));
                 }
                 buf
@@ -204,10 +204,10 @@ pub struct AchievementHeader {
 }
 
 impl Parse for AchievementHeader {
-    fn parse<R: Read>(read: &mut R) -> std::io::Result<Self> {
+    fn parse<R: Read>(r: &mut R) -> std::io::Result<Self> {
         Ok(Self {
-            typ: SpaceOptimizedString::parse(read)?,
-            subobjects: Array::parse(read)?,
+            typ: SpaceOptimizedString::parse(r)?,
+            subobjects: Array::parse(r)?,
         })
     }
 }
@@ -226,10 +226,10 @@ pub struct HeaderSubobject {
 }
 
 impl Parse for HeaderSubobject {
-    fn parse<R: Read>(read: &mut R) -> std::io::Result<Self> {
+    fn parse<R: Read>(r: &mut R) -> std::io::Result<Self> {
         Ok(Self {
-            id: SpaceOptimizedString::parse(read)?,
-            index: i16::from_le_bytes(read_exact(read)?),
+            id: SpaceOptimizedString::parse(r)?,
+            index: i16::from_le_bytes(read_exact(r)?),
         })
     }
 }
@@ -249,10 +249,10 @@ pub struct AchievementContent {
 }
 
 impl Parse for AchievementContent {
-    fn parse<R: Read>(read: &mut R) -> std::io::Result<Self> {
-        let typ = SpaceOptimizedString::parse(read)?;
-        let id = SpaceOptimizedString::parse(read)?;
-        let progress = AchievementProgress::parse(&typ.value, read)?;
+    fn parse<R: Read>(r: &mut R) -> std::io::Result<Self> {
+        let typ = SpaceOptimizedString::parse(r)?;
+        let id = SpaceOptimizedString::parse(r)?;
+        let progress = AchievementProgress::parse(&typ.value, r)?;
         Ok(Self { typ, id, progress })
     }
 }
@@ -364,29 +364,29 @@ impl AchievementProgress {
 }
 
 impl AchievementProgress {
-    fn parse<R: Read>(typ: &[u8], read: &mut R) -> std::io::Result<Self> {
+    fn parse<R: Read>(typ: &[u8], r: &mut R) -> std::io::Result<Self> {
         use AchievementProgress::*;
         Ok(match typ {
             b"achievement" => Achievement,
-            b"build-entity-achievement" => BuildEntity(read_exact(read)?),
-            b"change-surface-achievement" => ChangeSurface(read_exact(read)?),
+            b"build-entity-achievement" => BuildEntity(read_exact(r)?),
+            b"change-surface-achievement" => ChangeSurface(read_exact(r)?),
             b"combat-robot-count-achievement" => {
-                CombatRobotCount(i32::from_le_bytes(read_exact(read)?))
+                CombatRobotCount(i32::from_le_bytes(read_exact(r)?))
             }
             b"complete-objective-achievement" => CompleteObjective,
             b"construct-with-robots-achievement" => ConstructWithRobots {
-                constructed: i32::from_le_bytes(read_exact(read)?),
-                unknown: read_exact(read)?,
+                constructed: i32::from_le_bytes(read_exact(r)?),
+                unknown: read_exact(r)?,
             },
-            b"create-platform-achievement" => CreatePlatform(read_exact(read)?),
+            b"create-platform-achievement" => CreatePlatform(read_exact(r)?),
             b"deconstruct-with-robots-achievement" => DeconstructWithRobots {
-                deconstructed: i32::from_le_bytes(read_exact(read)?),
+                deconstructed: i32::from_le_bytes(read_exact(r)?),
             },
-            b"deliver-by-robots-achievement" => DeliverByRobots(read_exact(read)?),
-            b"deplete-resource-achievement" => DepleteResource(read_exact(read)?),
-            b"destroy-cliff-achievement" => DestroyCliff(read_exact(read)?),
-            b"dont-build-entity-achievement" => DontBuildEntity(read_exact(read)?),
-            b"dont-craft-manually-achievement" => DontCraftManually(read_exact(read)?),
+            b"deliver-by-robots-achievement" => DeliverByRobots(read_exact(r)?),
+            b"deplete-resource-achievement" => DepleteResource(read_exact(r)?),
+            b"destroy-cliff-achievement" => DestroyCliff(read_exact(r)?),
+            b"dont-build-entity-achievement" => DontBuildEntity(read_exact(r)?),
+            b"dont-craft-manually-achievement" => DontCraftManually(read_exact(r)?),
             b"dont-kill-manually-achievement" => {
                 todo!("Unimplemented achievement type: dont-kill-manually-achievement")
             }
@@ -395,40 +395,40 @@ impl AchievementProgress {
             ),
             b"dont-use-entity-in-energy-production-achievement" => {
                 DontUseEntityInEnergyProduction {
-                    max_j_per_h: f64::from_le_bytes(read_exact(read)?),
+                    max_j_per_h: f64::from_le_bytes(read_exact(r)?),
                 }
             }
-            b"equip-armor-achievement" => EquipArmor(read_exact(read)?),
-            b"finish-the-game-achievement" => FinishTheGame(read_exact(read)?),
-            b"group-attack-achievement" => GroupAttack(read_exact(read)?),
+            b"equip-armor-achievement" => EquipArmor(read_exact(r)?),
+            b"finish-the-game-achievement" => FinishTheGame(read_exact(r)?),
+            b"group-attack-achievement" => GroupAttack(read_exact(r)?),
             b"kill-achievement" => Kill {
-                max_killed: f64::from_le_bytes(read_exact(read)?),
+                max_killed: f64::from_le_bytes(read_exact(r)?),
             },
-            b"module-transfer-achievement" => ModuleTransfer(read_exact(read)?),
-            b"place-equipment-achievement" => PlaceEquipment(read_exact(read)?),
+            b"module-transfer-achievement" => ModuleTransfer(read_exact(r)?),
+            b"place-equipment-achievement" => PlaceEquipment(read_exact(r)?),
             b"player-damaged-achievement" => PlayerDamaged {
-                max_damage: f32::from_le_bytes(read_exact(read)?),
-                survived: read_exact(read)? == [1],
+                max_damage: f32::from_le_bytes(read_exact(r)?),
+                survived: read_exact(r)? == [1],
             },
             b"produce-achievement" => Produce {
-                produced: f64::from_le_bytes(read_exact(read)?),
+                produced: f64::from_le_bytes(read_exact(r)?),
             },
             b"produce-per-hour-achievement" => ProducePerHour {
-                max_per_h: f64::from_le_bytes(read_exact(read)?),
+                max_per_h: f64::from_le_bytes(read_exact(r)?),
             },
             b"research-achievement" => Research,
-            b"research-with-science-pack-achievement" => ResearchWithSciencePack(read_exact(read)?),
-            b"shoot-achievement" => Shoot(read_exact(read)?),
+            b"research-with-science-pack-achievement" => ResearchWithSciencePack(read_exact(r)?),
+            b"shoot-achievement" => Shoot(read_exact(r)?),
             b"space-connection-distance-traveled-achievement" => {
-                SpaceConnectionDistanceTraveled(read_exact(read)?)
+                SpaceConnectionDistanceTraveled(read_exact(r)?)
             }
             b"train-path-achievement" => TrainPath {
-                longest_path: f64::from_le_bytes(read_exact(read)?),
+                longest_path: f64::from_le_bytes(read_exact(r)?),
             },
             b"use-entity-in-energy-production-achievement" => {
-                UseEntityInEnergyProduction(read_exact(read)?)
+                UseEntityInEnergyProduction(read_exact(r)?)
             }
-            b"use-item-achievement" => UseItem(read_exact(read)?),
+            b"use-item-achievement" => UseItem(read_exact(r)?),
             _ => unimplemented!("Unknown achievement type: {}", String::from_utf8_lossy(typ)),
         })
     }
