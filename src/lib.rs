@@ -136,7 +136,7 @@ where
 #[derive(Debug)]
 pub struct AchievementsDat {
     version: [i16; 4],
-    const_false: bool,
+    unused: [u8; 1],
     headers: Array<2, i16, AchievementHeader>,
     contents: Array<4, i32, AchievementContent>,
     tracked: Vec<i16>,
@@ -168,7 +168,7 @@ impl Parse for AchievementsDat {
                 i16::from_le_bytes(read_exact(read)?),
                 i16::from_le_bytes(read_exact(read)?),
             ],
-            const_false: read_exact::<1, _>(read)? == [1],
+            unused: read_exact(read)?,
             headers: Array::parse(read)?,
             contents: Array::parse(read)?,
             tracked: {
@@ -188,7 +188,7 @@ impl Serialize for AchievementsDat {
         w.write_all(&self.version[1].to_le_bytes())?;
         w.write_all(&self.version[2].to_le_bytes())?;
         w.write_all(&self.version[3].to_le_bytes())?;
-        w.write_all(&[self.const_false.into()])?;
+        w.write_all(&self.unused)?;
         self.headers.serialize(w)?;
         self.contents.serialize(w)?;
         self.tracked
