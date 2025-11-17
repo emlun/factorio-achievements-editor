@@ -37,20 +37,27 @@ pub struct SpaceOptimizedString {
     #[bw(try_calc(value.len().try_into().map(Some)))]
     long_len: Option<u32>,
 
-    #[br(count = long_len.unwrap_or(short_len.into()))]
-    value: Vec<u8>,
+    #[br(count = long_len.unwrap_or(short_len.into()), try_map = String::from_utf8)]
+    #[bw(map = String::as_bytes)]
+    value: String,
 }
 
 impl Debug for SpaceOptimizedString {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        f.write_str(&String::from_utf8(self.value.clone()).map_err(|_| std::fmt::Error)?)
+        f.write_str(&self.value)
+    }
+}
+
+impl AsRef<str> for SpaceOptimizedString {
+    fn as_ref(&self) -> &str {
+        &self.value
     }
 }
 
 impl Deref for SpaceOptimizedString {
-    type Target = Vec<u8>;
+    type Target = str;
     fn deref(&self) -> &<Self as Deref>::Target {
-        &self.value
+        self.as_ref()
     }
 }
 

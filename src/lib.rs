@@ -36,10 +36,10 @@ pub struct AchievementsDat {
 }
 
 impl AchievementsDat {
-    pub fn delete(mut self, id: &[u8]) -> Self {
+    pub fn delete(mut self, id: &str) -> Self {
         self.contents
             .iter_mut()
-            .filter(|content| content.id.as_slice() == id)
+            .filter(|content| content.id.as_ref() == id)
             .for_each(|content| {
                 content.progress.reset();
             });
@@ -70,7 +70,7 @@ pub struct HeaderSubobject {
 pub struct AchievementContent {
     typ: SpaceOptimizedString,
     id: SpaceOptimizedString,
-    #[br(args(typ.as_slice()))]
+    #[br(args(typ.as_bytes()))]
     progress: AchievementProgress,
 }
 

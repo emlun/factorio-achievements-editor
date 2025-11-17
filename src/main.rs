@@ -60,7 +60,7 @@ fn main() -> BinResult<()> {
         }
 
         Some(Command::Delete { id }) => {
-            let data = data.delete(id.as_bytes());
+            let data = data.delete(&id);
             data.write_le(&mut NoSeek::new(&mut std::io::stdout()))?;
         }
 
