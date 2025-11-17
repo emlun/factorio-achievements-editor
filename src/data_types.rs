@@ -28,9 +28,15 @@ use binrw::error::CustomError;
 #[binrw]
 #[derive(Eq, Ord, PartialEq, PartialOrd)]
 pub struct SpaceOptimizedString {
+    #[br(temp)]
+    #[bw(try_calc(if value.len() < 255 { value.len().try_into() } else { Ok(255) }))]
     short_len: u8,
-    #[br(if(short_len == 255))]
+
+    #[br(temp)]
+    #[brw(if(short_len == 255))]
+    #[bw(try_calc(value.len().try_into().map(Some)))]
     long_len: Option<u32>,
+
     #[br(count = long_len.unwrap_or(short_len.into()))]
     value: Vec<u8>,
 }
