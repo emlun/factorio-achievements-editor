@@ -40,16 +40,16 @@ impl Debug for SpaceOptimizedString {
 #[binrw]
 #[derive(Debug)]
 pub struct AchievementsDat {
-    version: [i16; 4],
+    version: [u16; 4],
     unused: [u8; 1],
-    headers_len: i16,
+    headers_len: u16,
     #[br(count = headers_len)]
     headers: Vec<AchievementHeader>,
-    contents_len: i32,
+    contents_len: u32,
     #[br(count = contents_len)]
     contents: Vec<AchievementContent>,
     #[br(parse_with = until_eof)]
-    tracked: Vec<i16>,
+    tracked: Vec<u16>,
 }
 
 impl AchievementsDat {
@@ -72,7 +72,7 @@ impl AchievementsDat {
 #[derive(Debug)]
 pub struct AchievementHeader {
     typ: SpaceOptimizedString,
-    subobjects_len: i16,
+    subobjects_len: u16,
     #[br(count = subobjects_len)]
     subobjects: Vec<HeaderSubobject>,
 }
@@ -81,7 +81,7 @@ pub struct AchievementHeader {
 #[derive(Debug)]
 pub struct HeaderSubobject {
     id: SpaceOptimizedString,
-    index: i16,
+    index: u16,
 }
 
 #[binrw]
@@ -104,15 +104,15 @@ pub enum AchievementProgress {
     #[br(pre_assert(typ == b"change-surface-achievement"))]
     ChangeSurface([u8; 1]),
     #[br(pre_assert(typ == b"combat-robot-count-achievement"))]
-    CombatRobotCount(i32),
+    CombatRobotCount(u32),
     #[br(pre_assert(typ == b"complete-objective-achievement"))]
     CompleteObjective,
     #[br(pre_assert(typ == b"construct-with-robots-achievement"))]
-    ConstructWithRobots { constructed: i32, unknown: [u8; 4] },
+    ConstructWithRobots { constructed: u32, unknown: [u8; 4] },
     #[br(pre_assert(typ == b"create-platform-achievement"))]
     CreatePlatform([u8; 4]),
     #[br(pre_assert(typ == b"deconstruct-with-robots-achievement"))]
-    DeconstructWithRobots { deconstructed: i32 },
+    DeconstructWithRobots { deconstructed: u32 },
     #[br(pre_assert(typ == b"deliver-by-robots-achievement"))]
     DeliverByRobots([u8; 4]),
     #[br(pre_assert(typ == b"deplete-resource-achievement"))]
