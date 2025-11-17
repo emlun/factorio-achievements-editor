@@ -14,12 +14,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+mod data_types;
+
 use std::collections::BTreeSet;
 use std::fmt::Debug;
 use std::fmt::Formatter;
 
 use binrw::binrw;
 use binrw::helpers::until_eof;
+use data_types::SizedVec;
 
 #[binrw]
 #[derive(Eq, Ord, PartialEq, PartialOrd)]
@@ -42,12 +45,8 @@ impl Debug for SpaceOptimizedString {
 pub struct AchievementsDat {
     version: [u16; 4],
     unused: [u8; 1],
-    headers_len: u16,
-    #[br(count = headers_len)]
-    headers: Vec<AchievementHeader>,
-    contents_len: u32,
-    #[br(count = contents_len)]
-    contents: Vec<AchievementContent>,
+    headers: SizedVec<u16, AchievementHeader>,
+    contents: SizedVec<u32, AchievementContent>,
     #[br(parse_with = until_eof)]
     tracked: Vec<u16>,
 }
@@ -72,9 +71,7 @@ impl AchievementsDat {
 #[derive(Debug)]
 pub struct AchievementHeader {
     typ: SpaceOptimizedString,
-    subobjects_len: u16,
-    #[br(count = subobjects_len)]
-    subobjects: Vec<HeaderSubobject>,
+    subobjects: SizedVec<u16, HeaderSubobject>,
 }
 
 #[binrw]
