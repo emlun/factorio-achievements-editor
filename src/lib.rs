@@ -21,8 +21,8 @@ use std::fmt::Formatter;
 use binrw::binrw;
 use binrw::helpers::until_eof;
 
-#[derive(Eq, Ord, PartialEq, PartialOrd)]
 #[binrw]
+#[derive(Eq, Ord, PartialEq, PartialOrd)]
 pub struct SpaceOptimizedString {
     short_len: u8,
     #[br(if(short_len == 255))]
@@ -37,8 +37,8 @@ impl Debug for SpaceOptimizedString {
     }
 }
 
-#[derive(Debug)]
 #[binrw]
+#[derive(Debug)]
 pub struct AchievementsDat {
     version: [i16; 4],
     unused: [u8; 1],
@@ -68,8 +68,8 @@ impl AchievementsDat {
     }
 }
 
-#[derive(Debug)]
 #[binrw]
+#[derive(Debug)]
 pub struct AchievementHeader {
     typ: SpaceOptimizedString,
     subobjects_len: i16,
@@ -77,15 +77,15 @@ pub struct AchievementHeader {
     subobjects: Vec<HeaderSubobject>,
 }
 
-#[derive(Debug)]
 #[binrw]
+#[derive(Debug)]
 pub struct HeaderSubobject {
     id: SpaceOptimizedString,
     index: i16,
 }
 
-#[derive(Debug)]
 #[binrw]
+#[derive(Debug)]
 pub struct AchievementContent {
     typ: SpaceOptimizedString,
     id: SpaceOptimizedString,
@@ -93,8 +93,8 @@ pub struct AchievementContent {
     progress: AchievementProgress,
 }
 
-#[derive(Debug)]
 #[binrw]
+#[derive(Debug)]
 #[br(import(typ: &[u8]))]
 pub enum AchievementProgress {
     #[br(pre_assert(typ == b"achievement"))]
