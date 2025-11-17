@@ -19,6 +19,7 @@ mod data_types;
 use std::collections::BTreeSet;
 use std::fmt::Debug;
 use std::fmt::Formatter;
+use std::ops::Deref;
 
 use binrw::binrw;
 use binrw::helpers::until_eof;
@@ -40,6 +41,13 @@ impl Debug for SpaceOptimizedString {
     }
 }
 
+impl Deref for SpaceOptimizedString {
+    type Target = Vec<u8>;
+    fn deref(&self) -> &<Self as Deref>::Target {
+        &self.value
+    }
+}
+
 #[binrw]
 #[derive(Debug)]
 pub struct AchievementsDat {
@@ -55,7 +63,7 @@ impl AchievementsDat {
     pub fn delete(mut self, id: &[u8]) -> Self {
         self.contents
             .iter_mut()
-            .filter(|content| content.id.value.as_slice() == id)
+            .filter(|content| content.id.as_slice() == id)
             .for_each(|content| {
                 content.progress.reset();
             });
@@ -86,7 +94,7 @@ pub struct HeaderSubobject {
 pub struct AchievementContent {
     typ: SpaceOptimizedString,
     id: SpaceOptimizedString,
-    #[br(args(typ.value.as_slice()))]
+    #[br(args(typ.as_slice()))]
     progress: AchievementProgress,
 }
 
