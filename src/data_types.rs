@@ -15,6 +15,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::fmt::Debug;
+use std::fmt::Formatter;
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::ops::DerefMut;
@@ -23,6 +24,29 @@ use binrw::BinRead;
 use binrw::BinWrite;
 use binrw::binrw;
 use binrw::error::CustomError;
+
+#[binrw]
+#[derive(Eq, Ord, PartialEq, PartialOrd)]
+pub struct SpaceOptimizedString {
+    short_len: u8,
+    #[br(if(short_len == 255))]
+    long_len: Option<u32>,
+    #[br(count = long_len.unwrap_or(short_len.into()))]
+    value: Vec<u8>,
+}
+
+impl Debug for SpaceOptimizedString {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        f.write_str(&String::from_utf8(self.value.clone()).map_err(|_| std::fmt::Error)?)
+    }
+}
+
+impl Deref for SpaceOptimizedString {
+    type Target = Vec<u8>;
+    fn deref(&self) -> &<Self as Deref>::Target {
+        &self.value
+    }
+}
 
 #[binrw]
 #[derive(Debug)]
