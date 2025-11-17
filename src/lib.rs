@@ -17,137 +17,46 @@
 use std::collections::BTreeSet;
 use std::fmt::Debug;
 use std::fmt::Formatter;
-use std::io::Read;
-use std::io::Write;
-use std::marker::PhantomData;
 
-fn read_exact<const LEN: usize, R: Read>(r: &mut R) -> std::io::Result<[u8; LEN]> {
-    let mut buf = [0; LEN];
-    r.read_exact(&mut buf)?;
-    Ok(buf)
-}
-
-pub trait Parse
-where
-    Self: Sized,
-{
-    fn parse<R: Read>(r: &mut R) -> std::io::Result<Self>;
-}
-
-pub trait Serialize
-where
-    Self: Sized,
-{
-    fn serialize<W: Write>(&self, w: &mut W) -> std::io::Result<()>;
-}
+use binrw::binrw;
+use binrw::helpers::until_eof;
 
 #[derive(Eq, Ord, PartialEq, PartialOrd)]
+#[binrw]
 pub struct SpaceOptimizedString {
-    value: Box<[u8]>,
+    short_len: u8,
+    #[br(if(short_len == 255))]
+    long_len: Option<u32>,
+    #[br(count = long_len.unwrap_or(short_len.into()))]
+    value: Vec<u8>,
 }
 
 impl Debug for SpaceOptimizedString {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        f.write_str(&String::from_utf8(self.value.to_vec()).map_err(|_| std::fmt::Error)?)
-    }
-}
-
-impl Parse for SpaceOptimizedString {
-    fn parse<R: Read>(r: &mut R) -> std::io::Result<Self> {
-        let head: [u8; 1] = read_exact(r)?;
-        let len: u32 = if head == [255] {
-            u32::from_le_bytes(read_exact(r)?)
-        } else {
-            head[0].into()
-        };
-        let mut buf: Vec<u8> = vec![0; len.try_into().expect("Failed to parse length as usize")];
-        r.read_exact(buf.as_mut_slice())?;
-        Ok(Self {
-            value: buf.into_boxed_slice(),
-        })
-    }
-}
-
-impl Serialize for SpaceOptimizedString {
-    fn serialize<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
-        if self.value.len() < 255 {
-            w.write_all(&self.value.len().to_le_bytes()[0..1])?;
-        } else {
-            w.write_all(&[255])?;
-            w.write_all(&self.value.len().to_le_bytes()[0..4])?;
-        }
-        w.write_all(&self.value)
-    }
-}
-
-trait FromLeBytes<const LEN: usize> {
-    fn from_le_bytes(bytes: &[u8; LEN]) -> Self;
-}
-
-impl FromLeBytes<2> for i16 {
-    fn from_le_bytes(bytes: &[u8; 2]) -> Self {
-        Self::from_le_bytes(*bytes)
-    }
-}
-impl FromLeBytes<4> for i32 {
-    fn from_le_bytes(bytes: &[u8; 4]) -> Self {
-        Self::from_le_bytes(*bytes)
+        f.write_str(&String::from_utf8(self.value.clone()).map_err(|_| std::fmt::Error)?)
     }
 }
 
 #[derive(Debug)]
-pub struct Array<const LEN: usize, L, T> {
-    len: PhantomData<([u8; LEN], L)>,
-    items: Vec<T>,
-}
-
-impl<const LEN: usize, L, T> Parse for Array<LEN, L, T>
-where
-    L: FromLeBytes<LEN>,
-    usize: TryFrom<L>,
-    <usize as TryFrom<L>>::Error: Debug,
-    T: Parse,
-{
-    fn parse<R: Read>(r: &mut R) -> std::io::Result<Self> {
-        let raw_len = read_exact(r)?;
-        let len = usize::try_from(L::from_le_bytes(&raw_len))
-            .unwrap_or_else(|_| panic!("Invalid length: {:?}", raw_len));
-        let mut items = Vec::with_capacity(len);
-        for _ in 0..len {
-            items.push(T::parse(r)?);
-        }
-        Ok(Self {
-            len: PhantomData,
-            items,
-        })
-    }
-}
-
-impl<const LEN: usize, L, T> Serialize for Array<LEN, L, T>
-where
-    T: Serialize,
-{
-    fn serialize<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
-        w.write_all(&self.items.len().to_le_bytes()[0..LEN])?;
-        self.items.iter().try_for_each(|item| item.serialize(w))
-    }
-}
-
-#[derive(Debug)]
+#[binrw]
 pub struct AchievementsDat {
     version: [i16; 4],
     unused: [u8; 1],
-    headers: Array<2, i16, AchievementHeader>,
-    contents: Array<4, i32, AchievementContent>,
+    headers_len: i16,
+    #[br(count = headers_len)]
+    headers: Vec<AchievementHeader>,
+    contents_len: i32,
+    #[br(count = contents_len)]
+    contents: Vec<AchievementContent>,
+    #[br(parse_with = until_eof)]
     tracked: Vec<i16>,
 }
 
 impl AchievementsDat {
     pub fn delete(mut self, id: &[u8]) -> Self {
         self.contents
-            .items
             .iter_mut()
-            .filter(|content| content.id.value.as_ref() == id)
+            .filter(|content| content.id.value.as_slice() == id)
             .for_each(|content| {
                 content.progress.reset();
             });
@@ -155,151 +64,104 @@ impl AchievementsDat {
     }
 
     pub fn list(&self) -> BTreeSet<&SpaceOptimizedString> {
-        self.contents.items.iter().map(|item| &item.id).collect()
-    }
-}
-
-impl Parse for AchievementsDat {
-    fn parse<R: Read>(r: &mut R) -> std::io::Result<Self> {
-        Ok(Self {
-            version: [
-                i16::from_le_bytes(read_exact(r)?),
-                i16::from_le_bytes(read_exact(r)?),
-                i16::from_le_bytes(read_exact(r)?),
-                i16::from_le_bytes(read_exact(r)?),
-            ],
-            unused: read_exact(r)?,
-            headers: Array::parse(r)?,
-            contents: Array::parse(r)?,
-            tracked: {
-                let mut buf = Vec::new();
-                while let Ok(next) = read_exact(r) {
-                    buf.push(i16::from_le_bytes(next));
-                }
-                buf
-            },
-        })
-    }
-}
-
-impl Serialize for AchievementsDat {
-    fn serialize<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
-        w.write_all(&self.version[0].to_le_bytes())?;
-        w.write_all(&self.version[1].to_le_bytes())?;
-        w.write_all(&self.version[2].to_le_bytes())?;
-        w.write_all(&self.version[3].to_le_bytes())?;
-        w.write_all(&self.unused)?;
-        self.headers.serialize(w)?;
-        self.contents.serialize(w)?;
-        self.tracked
-            .iter()
-            .try_for_each(|tracked| w.write_all(&tracked.to_le_bytes()))
+        self.contents.iter().map(|item| &item.id).collect()
     }
 }
 
 #[derive(Debug)]
+#[binrw]
 pub struct AchievementHeader {
     typ: SpaceOptimizedString,
-    subobjects: Array<2, i16, HeaderSubobject>,
-}
-
-impl Parse for AchievementHeader {
-    fn parse<R: Read>(r: &mut R) -> std::io::Result<Self> {
-        Ok(Self {
-            typ: SpaceOptimizedString::parse(r)?,
-            subobjects: Array::parse(r)?,
-        })
-    }
-}
-
-impl Serialize for AchievementHeader {
-    fn serialize<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
-        self.typ.serialize(w)?;
-        self.subobjects.serialize(w)
-    }
+    subobjects_len: i16,
+    #[br(count = subobjects_len)]
+    subobjects: Vec<HeaderSubobject>,
 }
 
 #[derive(Debug)]
+#[binrw]
 pub struct HeaderSubobject {
     id: SpaceOptimizedString,
     index: i16,
 }
 
-impl Parse for HeaderSubobject {
-    fn parse<R: Read>(r: &mut R) -> std::io::Result<Self> {
-        Ok(Self {
-            id: SpaceOptimizedString::parse(r)?,
-            index: i16::from_le_bytes(read_exact(r)?),
-        })
-    }
-}
-
-impl Serialize for HeaderSubobject {
-    fn serialize<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
-        self.id.serialize(w)?;
-        w.write_all(&self.index.to_le_bytes())
-    }
-}
-
 #[derive(Debug)]
+#[binrw]
 pub struct AchievementContent {
     typ: SpaceOptimizedString,
     id: SpaceOptimizedString,
+    #[br(args(typ.value.as_slice()))]
     progress: AchievementProgress,
 }
 
-impl Parse for AchievementContent {
-    fn parse<R: Read>(r: &mut R) -> std::io::Result<Self> {
-        let typ = SpaceOptimizedString::parse(r)?;
-        let id = SpaceOptimizedString::parse(r)?;
-        let progress = AchievementProgress::parse(&typ.value, r)?;
-        Ok(Self { typ, id, progress })
-    }
-}
-
-impl Serialize for AchievementContent {
-    fn serialize<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
-        self.typ.serialize(w)?;
-        self.id.serialize(w)?;
-        self.progress.serialize(w)
-    }
-}
-
 #[derive(Debug)]
+#[binrw]
+#[br(import(typ: &[u8]))]
 pub enum AchievementProgress {
+    #[br(pre_assert(typ == b"achievement"))]
     Achievement,
+    #[br(pre_assert(typ == b"build-entity-achievement"))]
     BuildEntity([u8; 4]),
+    #[br(pre_assert(typ == b"change-surface-achievement"))]
     ChangeSurface([u8; 1]),
+    #[br(pre_assert(typ == b"combat-robot-count-achievement"))]
     CombatRobotCount(i32),
+    #[br(pre_assert(typ == b"complete-objective-achievement"))]
     CompleteObjective,
+    #[br(pre_assert(typ == b"construct-with-robots-achievement"))]
     ConstructWithRobots { constructed: i32, unknown: [u8; 4] },
+    #[br(pre_assert(typ == b"create-platform-achievement"))]
     CreatePlatform([u8; 4]),
+    #[br(pre_assert(typ == b"deconstruct-with-robots-achievement"))]
     DeconstructWithRobots { deconstructed: i32 },
+    #[br(pre_assert(typ == b"deliver-by-robots-achievement"))]
     DeliverByRobots([u8; 4]),
+    #[br(pre_assert(typ == b"deplete-resource-achievement"))]
     DepleteResource([u8; 4]),
+    #[br(pre_assert(typ == b"destroy-cliff-achievement"))]
     DestroyCliff([u8; 4]),
+    #[br(pre_assert(typ == b"dont-build-entity-achievement"))]
     DontBuildEntity([u8; 5]),
+    #[br(pre_assert(typ == b"dont-craft-manually-achievement"))]
     DontCraftManually([u8; 4]),
-    // Unknown format
+    /// Unknown format
+    #[br(pre_assert(typ == b"dont-kill-manually-achievement"))]
     DontKillManually([u8; 0]),
-    // Unknown format
+    /// Unknown format
+    #[br(pre_assert(typ == b"dont-research-before-researching-achievement"))]
     DontResearchBeforeResearching([u8; 0]),
+    #[br(pre_assert(typ == b"dont-use-entity-in-energy-production-achievement"))]
     DontUseEntityInEnergyProduction { max_j_per_h: f64 },
+    #[br(pre_assert(typ == b"equip-armor-achievement"))]
     EquipArmor([u8; 4]),
+    #[br(pre_assert(typ == b"finish-the-game-achievement"))]
     FinishTheGame([u8; 4]),
+    #[br(pre_assert(typ == b"group-attack-achievement"))]
     GroupAttack([u8; 4]),
+    #[br(pre_assert(typ == b"kill-achievement"))]
     Kill { max_killed: f64 },
+    #[br(pre_assert(typ == b"module-transfer-achievement"))]
     ModuleTransfer([u8; 4]),
+    #[br(pre_assert(typ == b"place-equipment-achievement"))]
     PlaceEquipment([u8; 4]),
-    PlayerDamaged { max_damage: f32, survived: bool },
+    #[br(pre_assert(typ == b"player-damaged-achievement"))]
+    PlayerDamaged { max_damage: f32, survived: u8 },
+    #[br(pre_assert(typ == b"produce-achievement"))]
     Produce { produced: f64 },
+    #[br(pre_assert(typ == b"produce-per-hour-achievement"))]
     ProducePerHour { max_per_h: f64 },
+    #[br(pre_assert(typ == b"research-achievement"))]
     Research,
+    #[br(pre_assert(typ == b"research-with-science-pack-achievement"))]
     ResearchWithSciencePack([u8; 4]),
+    #[br(pre_assert(typ == b"shoot-achievement"))]
     Shoot([u8; 4]),
+    #[br(pre_assert(typ == b"space-connection-distance-traveled-achievement"))]
     SpaceConnectionDistanceTraveled([u8; 4]),
+    #[br(pre_assert(typ == b"train-path-achievement"))]
     TrainPath { longest_path: f64 },
+    #[br(pre_assert(typ == b"use-entity-in-energy-production-achievement"))]
     UseEntityInEnergyProduction([u8; 5]),
+    #[br(pre_assert(typ == b"use-item-achievement"))]
     UseItem([u8; 4]),
 }
 
@@ -360,130 +222,5 @@ impl AchievementProgress {
             UseEntityInEnergyProduction(..) => UseEntityInEnergyProduction(Default::default()),
             UseItem(..) => UseItem(Default::default()),
         };
-    }
-}
-
-impl AchievementProgress {
-    fn parse<R: Read>(typ: &[u8], r: &mut R) -> std::io::Result<Self> {
-        use AchievementProgress::*;
-        Ok(match typ {
-            b"achievement" => Achievement,
-            b"build-entity-achievement" => BuildEntity(read_exact(r)?),
-            b"change-surface-achievement" => ChangeSurface(read_exact(r)?),
-            b"combat-robot-count-achievement" => {
-                CombatRobotCount(i32::from_le_bytes(read_exact(r)?))
-            }
-            b"complete-objective-achievement" => CompleteObjective,
-            b"construct-with-robots-achievement" => ConstructWithRobots {
-                constructed: i32::from_le_bytes(read_exact(r)?),
-                unknown: read_exact(r)?,
-            },
-            b"create-platform-achievement" => CreatePlatform(read_exact(r)?),
-            b"deconstruct-with-robots-achievement" => DeconstructWithRobots {
-                deconstructed: i32::from_le_bytes(read_exact(r)?),
-            },
-            b"deliver-by-robots-achievement" => DeliverByRobots(read_exact(r)?),
-            b"deplete-resource-achievement" => DepleteResource(read_exact(r)?),
-            b"destroy-cliff-achievement" => DestroyCliff(read_exact(r)?),
-            b"dont-build-entity-achievement" => DontBuildEntity(read_exact(r)?),
-            b"dont-craft-manually-achievement" => DontCraftManually(read_exact(r)?),
-            b"dont-kill-manually-achievement" => {
-                todo!("Unimplemented achievement type: dont-kill-manually-achievement")
-            }
-            b"dont-research-before-researching-achievement" => todo!(
-                "Unimplemented achievement type: dont-research-before-researching-achievement"
-            ),
-            b"dont-use-entity-in-energy-production-achievement" => {
-                DontUseEntityInEnergyProduction {
-                    max_j_per_h: f64::from_le_bytes(read_exact(r)?),
-                }
-            }
-            b"equip-armor-achievement" => EquipArmor(read_exact(r)?),
-            b"finish-the-game-achievement" => FinishTheGame(read_exact(r)?),
-            b"group-attack-achievement" => GroupAttack(read_exact(r)?),
-            b"kill-achievement" => Kill {
-                max_killed: f64::from_le_bytes(read_exact(r)?),
-            },
-            b"module-transfer-achievement" => ModuleTransfer(read_exact(r)?),
-            b"place-equipment-achievement" => PlaceEquipment(read_exact(r)?),
-            b"player-damaged-achievement" => PlayerDamaged {
-                max_damage: f32::from_le_bytes(read_exact(r)?),
-                survived: read_exact(r)? == [1],
-            },
-            b"produce-achievement" => Produce {
-                produced: f64::from_le_bytes(read_exact(r)?),
-            },
-            b"produce-per-hour-achievement" => ProducePerHour {
-                max_per_h: f64::from_le_bytes(read_exact(r)?),
-            },
-            b"research-achievement" => Research,
-            b"research-with-science-pack-achievement" => ResearchWithSciencePack(read_exact(r)?),
-            b"shoot-achievement" => Shoot(read_exact(r)?),
-            b"space-connection-distance-traveled-achievement" => {
-                SpaceConnectionDistanceTraveled(read_exact(r)?)
-            }
-            b"train-path-achievement" => TrainPath {
-                longest_path: f64::from_le_bytes(read_exact(r)?),
-            },
-            b"use-entity-in-energy-production-achievement" => {
-                UseEntityInEnergyProduction(read_exact(r)?)
-            }
-            b"use-item-achievement" => UseItem(read_exact(r)?),
-            _ => unimplemented!("Unknown achievement type: {}", String::from_utf8_lossy(typ)),
-        })
-    }
-}
-
-impl Serialize for AchievementProgress {
-    fn serialize<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
-        use AchievementProgress::*;
-        match self {
-            Achievement => Ok(()),
-            BuildEntity(data) => w.write_all(data),
-            ChangeSurface(data) => w.write_all(data),
-            CombatRobotCount(count) => w.write_all(&count.to_le_bytes()),
-            CompleteObjective => Ok(()),
-            ConstructWithRobots {
-                constructed,
-                unknown,
-            } => {
-                w.write_all(&constructed.to_le_bytes())?;
-                w.write_all(unknown)
-            }
-            CreatePlatform(data) => w.write_all(data),
-            DeconstructWithRobots { deconstructed } => w.write_all(&deconstructed.to_le_bytes()),
-            DeliverByRobots(data) => w.write_all(data),
-            DepleteResource(data) => w.write_all(data),
-            DestroyCliff(data) => w.write_all(data),
-            DontBuildEntity(data) => w.write_all(data),
-            DontCraftManually(data) => w.write_all(data),
-            DontKillManually(..) => todo!(),
-            DontResearchBeforeResearching(..) => todo!(),
-            DontUseEntityInEnergyProduction { max_j_per_h } => {
-                w.write_all(&max_j_per_h.to_le_bytes())
-            }
-            EquipArmor(data) => w.write_all(data),
-            FinishTheGame(data) => w.write_all(data),
-            GroupAttack(data) => w.write_all(data),
-            Kill { max_killed } => w.write_all(&max_killed.to_le_bytes()),
-            ModuleTransfer(data) => w.write_all(data),
-            PlaceEquipment(data) => w.write_all(data),
-            PlayerDamaged {
-                max_damage,
-                survived,
-            } => {
-                w.write_all(&max_damage.to_le_bytes())?;
-                w.write_all(&[(*survived).into()])
-            }
-            Produce { produced } => w.write_all(&produced.to_le_bytes()),
-            ProducePerHour { max_per_h } => w.write_all(&max_per_h.to_le_bytes()),
-            Research => Ok(()),
-            ResearchWithSciencePack(data) => w.write_all(data),
-            Shoot(data) => w.write_all(data),
-            SpaceConnectionDistanceTraveled(data) => w.write_all(data),
-            TrainPath { longest_path } => w.write_all(&longest_path.to_le_bytes()),
-            UseEntityInEnergyProduction(data) => w.write_all(data),
-            UseItem(data) => w.write_all(data),
-        }
     }
 }

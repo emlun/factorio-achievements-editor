@@ -14,13 +14,16 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+#[cfg(debug_assertions)]
 use std::io::Read;
 
+use binrw::BinRead;
+use binrw::BinResult;
+use binrw::BinWrite;
+use binrw::io::NoSeek;
 use clap::Parser;
 use clap::Subcommand;
 use factorio_achievements_editor::AchievementsDat;
-use factorio_achievements_editor::Parse;
-use factorio_achievements_editor::Serialize;
 
 #[derive(Debug, Parser)]
 #[command(version, about)]
@@ -45,13 +48,11 @@ enum Command {
     List,
 }
 
-fn main() -> std::io::Result<()> {
+fn main() -> BinResult<()> {
     let cli = Cli::parse();
     let mut stdin = std::io::stdin();
-    let mut buf = Vec::new();
-    stdin.read_to_end(&mut buf)?;
 
-    let data = AchievementsDat::parse(&mut buf.as_slice())?;
+    let data = AchievementsDat::read_le(&mut NoSeek::new(&mut stdin))?;
 
     match cli.command {
         None | Some(Command::Dump) => {
@@ -60,7 +61,7 @@ fn main() -> std::io::Result<()> {
 
         Some(Command::Delete { id }) => {
             let data = data.delete(id.as_bytes());
-            data.serialize(&mut std::io::stdout())?;
+            data.write_le(&mut NoSeek::new(&mut std::io::stdout()))?;
         }
 
         Some(Command::List) => {
